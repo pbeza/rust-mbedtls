@@ -17,6 +17,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 
+use mbedtls::alloc::List as MbedtlsList;
 use mbedtls::pk::Pk;
 use mbedtls::rng::CtrDrbg;
 use mbedtls::ssl::config::{Endpoint, Preset, Transport};
@@ -79,21 +80,12 @@ fn result_main() -> TlsResult<()> {
 
     // Seeding the random number generator:
     //  4. ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char*)pers, strlen(pers));
+
+    let entropy = entropy_new();
+    let rng = Arc::new(CtrDrbg::new(Arc::new(entropy), None)?);
+
     // Creating the RA-TLS server cert and key:
     //  5. ret = (*ra_tls_create_key_and_crt_der_f)(&der_key, &der_key_size, &der_crt, &der_crt_size);
-    //  6. ret = mbedtls_x509_crt_parse(&srvcert, (unsigned char*)der_crt, der_crt_size);
-    //  7. ret = mbedtls_pk_parse_key(&pkey, (unsigned char*)der_key, der_key_size, /*pwd=*/NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
-    // Bind on https://localhost:4433/:
-    //  8. ret = mbedtls_net_bind(&listen_fd, NULL, "4433", MBEDTLS_NET_PROTO_TCP);
-    // Setting up the SSL data:
-    //  9. ret = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
-    //  10. mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    //  11. mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
-    //  12. ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey);
-    //  13. ret = mbedtls_ssl_setup(&ssl, &conf);
-    // Waiting for a remote connection:
-    //  14. ret = mbedtls_net_accept(&listen_fd, &client_fd, NULL, 0, NULL);
-    //  15. mbedtls_ssl_set_bio(&ssl, &client_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
 
     let mut der_key: *mut c_uchar = std::ptr::null_mut();
     let der_key_ptr: *mut *mut c_uchar = &mut der_key;
@@ -112,46 +104,57 @@ fn result_main() -> TlsResult<()> {
         )
     };
 
-    if result == 0 {
-        // Handle the successful function call
-        println!("Successfully obtained key and certificate data.");
-
-        // // Convert the raw pointers and sizes to slices
-        // let der_key_slice = unsafe { std::slice::from_raw_parts(der_key_ptr, der_key_size as usize) };
-        // let der_crt_slice = unsafe { std::slice::from_raw_parts(der_crt_ptr, der_crt_size as usize) };
-
-        // // Print or use the key and certificate data as needed
-        // println!("DER Key: {:?}", der_key_slice);
-        // println!("DER Certificate: {:?}", der_crt_slice);
-
-        // // Ensure to free the allocated memory in the C function
-        // unsafe {
-        //     libc::free(der_key_ptr as *mut c_void);
-        //     libc::free(der_crt_ptr as *mut c_void);
-        // }
-    } else {
-        // Handle the error case
-        println!(
+    if result != 0 {
+        panic!(
             "Failed to obtain key and certificate data (error code: {})",
             result
         );
     }
 
-    /*****************************/
+    println!("Successfully obtained key and certificate data.");
 
-    let entropy = entropy_new();
-    let rng = Arc::new(CtrDrbg::new(Arc::new(entropy), None)?);
-    let cert = Arc::new(Certificate::from_pem_multiple(keys::PEM_CERT.as_bytes())?); // generate using libra_tls_attest.so instead (ra_tls_create_key_and_crt_der function)
-    let key = Arc::new(Pk::from_private_key(
-        &mut test_rng(),
-        keys::PEM_KEY.as_bytes(),
-        None,
-    )?); // generate using libra_tls_attest.so instead (ra_tls_create_key_and_crt_der function)
+    // Convert the raw pointers and sizes to slices
+    let der_key_slice = unsafe { std::slice::from_raw_parts(der_key, der_key_size as usize) };
+    let der_crt_slice = unsafe { std::slice::from_raw_parts(der_crt, der_crt_size as usize) };
+
+    // Print or use the key and certificate data as needed
+    println!("DER Key: {:?}", der_key_slice);
+    println!("DER Certificate: {:?}", der_crt_slice);
+
+    // Ensure to free the allocated memory in the C function
+    // unsafe {
+    //     libc::free(der_key_ptr as *mut c_void);
+    //     libc::free(der_crt_ptr as *mut c_void);
+    // }
+
+    //  6. ret = mbedtls_x509_crt_parse(&srvcert, (unsigned char*)der_crt, der_crt_size);
+    let cert = Certificate::from_der(der_crt_slice)?; // generate using libra_tls_attest.so instead (ra_tls_create_key_and_crt_der function)
+
+    //  7. ret = mbedtls_pk_parse_key(&pkey, (unsigned char*)der_key, der_key_size, /*pwd=*/NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
+
+    let key = Pk::from_private_key(&mut test_rng(), der_key_slice, None)?;
+
+    // Bind on https://localhost:4433/:
+    //  8. ret = mbedtls_net_bind(&listen_fd, NULL, "4433", MBEDTLS_NET_PROTO_TCP);
+    // Setting up the SSL data:
+    //  9. ret = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+    //  10. mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+    //  11. mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
+    //  12. ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey);
+    //  13. ret = mbedtls_ssl_setup(&ssl, &conf);
+
     let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
     config.set_rng(rng);
-    config.push_cert(cert, key)?;
+    let mut cert_list = MbedtlsList::<Certificate>::new();
+    cert_list.push(cert);
+    let arc_cert_list = Arc::new(cert_list);
+    config.push_cert(arc_cert_list, key.into())?;
 
     let rc_config = Arc::new(config);
+
+    // Waiting for a remote connection:
+    //  14. ret = mbedtls_net_accept(&listen_fd, &client_fd, NULL, 0, NULL);
+    //  15. mbedtls_ssl_set_bio(&ssl, &client_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
 
     listen(move |conn| {
         let mut ctx = Context::new(rc_config.clone());
@@ -164,6 +167,33 @@ fn result_main() -> TlsResult<()> {
         session.get_mut().write_all(&line).unwrap();
         Ok(())
     })
+
+    /*****************************/
+
+    // let cert = Arc::new(Certificate::from_pem_multiple(keys::PEM_CERT.as_bytes())?); // generate using libra_tls_attest.so instead (ra_tls_create_key_and_crt_der function)
+    // let key = Arc::new(Pk::from_private_key(
+    //     &mut test_rng(),
+    //     keys::PEM_KEY.as_bytes(),
+    //     None,
+    // )?); // generate using libra_tls_attest.so instead (ra_tls_create_key_and_crt_der function)
+    // let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
+    // config.set_rng(rng);
+    // config.push_cert(cert, key)?;
+
+    // let rc_config = Arc::new(config);
+
+    // listen(move |conn| {
+    //     let mut ctx = Context::new(rc_config.clone());
+    //     ctx.establish(conn, None)?;
+    //     let mut session = BufReader::new(ctx);
+    //     let mut line = Vec::new();
+    //     session.read_until(b'\n', &mut line).unwrap();
+    //     let s = String::from_utf8(line.clone()).expect("Found invalid UTF-8");
+    //     println!("result: {}", s);
+    //     session.get_mut().write_all(&line).unwrap();
+    //     Ok(())
+    // })
+    // Ok(())
 }
 
 fn main() {
