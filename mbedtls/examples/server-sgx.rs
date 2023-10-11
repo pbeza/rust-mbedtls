@@ -65,6 +65,8 @@ fn result_main() -> TlsResult<()> {
     // ubuntu@VM-0-6-ubuntu:~/rust-mbedtls/target/debug/examples$ gramine-sgx-sign --manifest ./server-sgx.manifest --output ./server-sgx.manifest.sgx
     // ubuntu@VM-0-6-ubuntu:~/rust-mbedtls/target/debug/examples$ sudo gramine-sgx ./server-sgx
     // ubuntu@VM-0-6-ubuntu:~/gramine$ nm -D ./build-debug/tools/sgx/ra-tls/libra_tls_attest.so
+    // ubuntu@VM-0-6-ubuntu:~/rust-mbedtls/target/debug/examples$ gramine-sgx-sigstruct-view  ./server-sgx.sig
+    // ubuntu@VM-0-6-ubuntu:~/rust-mbedtls/target/debug/examples$ nm -D /home/ubuntu/rust-mbedtls/mbedtls/examples/libra_tls_attest.so
     // https://github.com/gramineproject/gramine/blob/master/CI-Examples/ra-tls-mbedtls/src/server.c
     // https://stackoverflow.com/questions/40602708/linking-rust-application-with-a-dynamic-library-not-in-the-runtime-linker-search
 
@@ -167,33 +169,6 @@ fn result_main() -> TlsResult<()> {
         session.get_mut().write_all(&line).unwrap();
         Ok(())
     })
-
-    /*****************************/
-
-    // let cert = Arc::new(Certificate::from_pem_multiple(keys::PEM_CERT.as_bytes())?); // generate using libra_tls_attest.so instead (ra_tls_create_key_and_crt_der function)
-    // let key = Arc::new(Pk::from_private_key(
-    //     &mut test_rng(),
-    //     keys::PEM_KEY.as_bytes(),
-    //     None,
-    // )?); // generate using libra_tls_attest.so instead (ra_tls_create_key_and_crt_der function)
-    // let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
-    // config.set_rng(rng);
-    // config.push_cert(cert, key)?;
-
-    // let rc_config = Arc::new(config);
-
-    // listen(move |conn| {
-    //     let mut ctx = Context::new(rc_config.clone());
-    //     ctx.establish(conn, None)?;
-    //     let mut session = BufReader::new(ctx);
-    //     let mut line = Vec::new();
-    //     session.read_until(b'\n', &mut line).unwrap();
-    //     let s = String::from_utf8(line.clone()).expect("Found invalid UTF-8");
-    //     println!("result: {}", s);
-    //     session.get_mut().write_all(&line).unwrap();
-    //     Ok(())
-    // })
-    // Ok(())
 }
 
 fn main() {
