@@ -13,6 +13,7 @@ extern crate mbedtls;
 
 use clap::Parser;
 use core::ffi::{c_char, c_int, c_size_t, c_uchar, c_uint};
+use mbedtls::error::LoError::Asn1InvalidData;
 use std::ffi::CStr;
 use std::io::{self, stdin, stdout, Write};
 use std::net::TcpStream;
@@ -21,7 +22,7 @@ use std::sync::Arc;
 use mbedtls::rng::CtrDrbg;
 use mbedtls::ssl::config::{Endpoint, Preset, Transport};
 use mbedtls::ssl::{Config, Context};
-use mbedtls::x509::Certificate;
+use mbedtls::x509::{Certificate, VerifyError};
 use mbedtls::Result as TlsResult;
 
 #[path = "../tests/support/mod.rs"]
@@ -246,8 +247,43 @@ fn result_main(addr: &str) -> TlsResult<()> {
     let cert = Arc::new(Certificate::from_pem_multiple(
         keys::ROOT_CA_CERT.as_bytes(),
     )?);
+
+    let verify_callback = move |crt: &Certificate, depth: i32, verify_flags: &mut VerifyError| {
+        if depth != 0 {
+            /* the cert chain in RA-TLS consists of single self-signed cert, so we expect depth 0 */
+            // MBEDTLS_ERR_X509_INVALID_FORMAT;
+            return Err(Asn1InvalidData.into());
+        }
+        if *verify_flags != VerifyError::empty() {
+            /* mbedTLS sets flags to signal that the cert is not to be trusted (e.g., it is not
+             * correctly signed by a trusted CA; since RA-TLS uses self-signed certs, we don't care
+             * what mbedTLS thinks and ignore internal cert verification logic of mbedTLS */
+            *verify_flags = VerifyError::empty();
+        }
+        let mut results: ra_tls_verify_callback_results = unsafe { std::mem::zeroed() };
+        let mut der_data: Vec<u8> = crt.as_der().to_vec();
+        let der_ptr = der_data.as_mut_ptr();
+        let der_len = der_data.len();
+        unsafe {
+            let ret = ra_tls_verify_callback_extended_der(
+                der_ptr,
+                der_len,
+                &mut results as *mut ra_tls_verify_callback_results,
+            );
+        }
+        Ok(())
+
+        // Test::CallbackSetVerifyFlags => {
+        //     *verify_flags |= VerifyError::CERT_OTHER;
+        //     Ok(())
+        // }
+        // Test::CallbackError => Err(codes::Asn1InvalidData.into()),
+    };
+
     let mut config = Config::new(Endpoint::Client, Transport::Stream, Preset::Default);
     config.set_rng(rng);
+    // https://github.com/fortanix/rust-mbedtls/blob/52476eed8af2824cc331acbd5ec84151a836291a/mbedtls/tests/ssl_conf_verify.rs#L53C25-L54C49
+    config.set_verify_callback(verify_callback);
     config.set_ca_list(cert, None);
     let mut ctx = Context::new(Arc::new(config));
 
@@ -271,6 +307,7 @@ struct Cli {
 }
 
 // ./client a 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff 3 4
+// https://github.com/fortanix/rust-mbedtls/blob/52476eed8af2824cc331acbd5ec84151a836291a/mbedtls/tests/ssl_conf_verify.rs#L19
 fn main() {
     let args = Cli::parse();
 
@@ -290,6 +327,9 @@ fn main() {
             ),
             Err(err) => println!("Error: {}", err),
         }
+
+        ISV_PROD_ID_ARR.copy_from_slice(&args.isv_prod_id.to_le_bytes());
+        ISV_SVN_ARR.copy_from_slice(&args.isv_svn.to_le_bytes());
     }
 
     println!("Before");
