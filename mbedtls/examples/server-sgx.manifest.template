@@ -17,7 +17,7 @@ fs.mounts = [
   { path = "/etc", uri = "file:/etc" },
 ]
 
-sgx.debug = true
+sgx.debug = false
 sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
 
 sgx.remote_attestation = "dcap"

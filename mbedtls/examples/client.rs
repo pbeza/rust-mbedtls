@@ -81,7 +81,7 @@ pub union ra_tls_verify_callback_results_union {
 #[derive(Copy, Clone)]
 pub struct RATLSVerifyCallbackResults {
     pub attestation_scheme: RATLSAttestationScheme,
-    pub err_loc: RATLSErrLoc, /* the step at which RA-TLS failed */
+    pub err_loc: RATLSErrLoc, /* the step at which RA-TLS failed with RA_TLS_ERR_LOC_T_AT_VERIFY_ENCLAVE_ATTRS */
     pub __bindgen_anon_1: ra_tls_verify_callback_results_union,
 }
 
@@ -164,26 +164,30 @@ unsafe extern "C" fn measurement_verification_callback(
     isv_prod_id: *const c_char,
     isv_svn: *const c_char,
 ) -> c_int {
+    println!("measurement_verification_callback_01");
     assert!(!mrenclave.is_null());
     assert!(!mrsigner.is_null());
     assert!(!isv_prod_id.is_null());
     assert!(!isv_svn.is_null());
+    println!("measurement_verification_callback_02");
 
     let pairs = [(&MRENCLAVE_ARR, mrenclave), (&MRSIGNER_ARR, mrsigner)];
 
     for &(arr, c_str_ptr) in &pairs {
-        if are_equal_u8_array_and_c_string(arr, c_str_ptr) {
+        if are_equal_u8_array_and_c_string(arr, c_str_ptr) == false {
             return -1;
         }
     }
+    println!("measurement_verification_callback_03");
 
     let pairs2 = [(&ISV_PROD_ID_ARR, isv_prod_id), (&ISV_SVN_ARR, isv_svn)];
 
     for &(arr, c_str_ptr) in &pairs2 {
-        if are_equal_u8_array_and_c_string(arr, c_str_ptr) {
+        if are_equal_u8_array_and_c_string(arr, c_str_ptr) == false {
             return -1;
         }
     }
+    println!("measurement_verification_callback_04");
 
     0
 }
@@ -220,7 +224,7 @@ fn result_main(addr: &str) -> TlsResult<()> {
     )?);
 
     let verify_callback = move |crt: &Certificate, depth: i32, verify_flags: &mut VerifyError| {
-        println!("hello world!");
+        println!("hello_world_01");
         if depth != 0 {
             println!("Depth should be 0 but is {}", depth);
             // the cert chain in RA-TLS consists of single self-signed cert, so we expect depth 0 */
@@ -232,39 +236,57 @@ fn result_main(addr: &str) -> TlsResult<()> {
              * what mbedTLS thinks and ignore internal cert verification logic of mbedTLS */
             *verify_flags = VerifyError::empty();
         }
+        println!("hello_world_02");
         let mut ratls_verify_results: RATLSVerifyCallbackResults = unsafe { std::mem::zeroed() };
         let mut der_data: Vec<u8> = crt.as_der().to_vec();
+        println!("DER data: {:?}", der_data); // prints the same DER as generated as server does
         let der_ptr = der_data.as_mut_ptr();
         let der_len = der_data.len();
+        println!("hello_world_03");
         unsafe {
             let ret = ra_tls_verify_callback_extended_der(
                 der_ptr,
                 der_len,
                 &mut ratls_verify_results as *mut RATLSVerifyCallbackResults,
             );
+            println!("hello_world_04");
+            println!("debug_info: {:?}", ratls_verify_results.err_loc);
             if ret != 0 {
                 println!("ra_tls_verify_callback_extended_der returned {}", ret);
                 return Err(Asn1InvalidData.into());
             }
         }
+        println!("hello_world_05");
 
         Ok(())
     };
 
+    println!("hello_world_06");
     let mut config = Config::new(Endpoint::Client, Transport::Stream, Preset::Default);
+    println!("hello_world_07");
     config.set_rng(rng);
     // https://github.com/fortanix/rust-mbedtls/blob/52476eed8af2824cc331acbd5ec84151a836291a/mbedtls/tests/ssl_conf_verify.rs#L53C25-L54C49
+    println!("hello_world_08");
     config.set_verify_callback(verify_callback);
+    println!("hello_world_09");
     config.set_ca_list(cert, None); // TODO needed?
+    println!("hello_world_10");
     let mut ctx = Context::new(Arc::new(config));
 
+    println!("hello_world_11");
     let conn = TcpStream::connect(addr).unwrap();
-    ctx.establish(conn, None)?;
+    println!("hello_world_12");
+    ctx.establish(conn, None)?; // TODO it is failing here (callback failure)
 
+    println!("hello_world_13");
     let mut line = String::new();
+    println!("hello_world_14");
     stdin().read_line(&mut line).unwrap();
+    println!("hello_world_15");
     ctx.write_all(line.as_bytes()).unwrap();
+    println!("hello_world_16");
     io::copy(&mut ctx, &mut stdout()).unwrap();
+    println!("hello_world_17");
     Ok(())
 }
 
