@@ -131,7 +131,8 @@ fn result_main() -> TlsResult<()> {
 
     //  6. ret = mbedtls_x509_crt_parse(&srvcert, (unsigned char*)der_crt, der_crt_size);
     let cert = Certificate::from_der(der_crt_slice)?; // generate using libra_tls_attest.so instead (ra_tls_create_key_and_crt_der function)
-
+                                                      // cert.extensions_raw().unwrap()
+    println!("raz dwa {}", hex::encode(cert.extensions_raw().unwrap()));
     //  7. ret = mbedtls_pk_parse_key(&pkey, (unsigned char*)der_key, der_key_size, /*pwd=*/NULL, 0, mbedtls_ctr_drbg_random, &ctr_drbg);
 
     let key = Pk::from_private_key(&mut test_rng(), der_key_slice, None)?;
