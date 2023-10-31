@@ -23,6 +23,12 @@ fn get_compilation_metadata_hash() -> String {
 }
 
 fn main() {
+    println!("cargo:rustc-link-lib=dylib=ra_tls_attest");
+    println!("cargo:rustc-link-lib=dylib=ra_tls_verify_dcap_gramine");
+    println!("cargo:rustc-link-lib=dylib=ra_tls_verify_dcap");
+    println!("cargo:rustc-link-lib=dylib=sgx_urts");
+    println!("cargo:rustc-link-search=all=/home/ubuntu/rust-mbedtls/mbedtls/examples");
+
     let metadata_hash = get_compilation_metadata_hash();
     println!("cargo:rustc-env=RUST_MBEDTLS_METADATA_HASH={}", metadata_hash);
 
